@@ -1,0 +1,107 @@
+# ============================================================
+# LoVRR + DeepThinker Requirements
+# ============================================================
+# This file consolidates dependencies for both components.
+# Install in separate conda environments for best compatibility.
+#
+# Environment 1: lovrr_env (for LoVRR model)
+# Environment 2: deepthinker_env (for DeepThinker service)
+# ============================================================
+
+# ============================================================
+# SECTION 1: LoVRR Core Dependencies
+# ============================================================
+# These packages are required for the LoVRR multi-agent system
+# (Planner, Grounder, Refiner, Answerer with LoRA adapters)
+
+accelerate==1.2.1
+decord==0.6.0
+fastparquet==2024.11.0
+gradio==5.23.1
+nncore==0.4.5
+numpy==1.26.4
+pandas==2.2.3
+peft==0.14.0
+pyarrow==21.0.0
+pysrt==1.1.2
+safetensors==0.5.3
+scikit-image==0.25.0
+scikit-learn==1.6.1
+sentencepiece==0.2.0
+spaces==0.34.0
+termplotlib==0.3.9
+triton==3.0.0
+
+# Pydantic version fix for Gradio compatibility
+# https://github.com/gradio-app/gradio/issues/10662
+pydantic==2.10.6
+
+# Transformers with necessary patches for LoVRR
+transformers==4.45.2
+
+# DeepSpeed for distributed training
+# https://github.com/microsoft/DeepSpeed/issues/6793
+deepspeed==0.15.4
+
+# PyTorch version requirement
+# https://github.com/pytorch/pytorch/issues/138386
+torch==2.4.0
+torchvision==0.19.0
+
+# ============================================================
+# SECTION 2: DeepThinker Service Dependencies
+# ============================================================
+# These packages are required for the DeepThinker reasoning model
+# (Reinforcement Learning enhanced video QA model)
+
+# FastAPI for HTTP service
+fastapi>=0.100.0
+uvicorn>=0.23.0
+
+# vLLM for efficient inference
+vllm==0.7.2
+
+# Qwen VL utilities
+qwen_vl_utils
+
+# Additional ML packages
+wandb==0.18.3
+tensorboardx
+nltk
+rouge_score
+
+# ============================================================
+# SECTION 3: Shared Dependencies
+# ============================================================
+# These packages are used by both components
+
+PyYAML>=6.0
+requests>=2.28.0
+tqdm>=4.65.0
+filelock>=3.12.0
+
+# ============================================================
+# INSTALLATION INSTRUCTIONS
+# ============================================================
+#
+# Option 1: Single environment (not recommended due to conflicts)
+#   pip install -r requirements.txt
+#
+# Option 2: Separate environments (recommended)
+#
+#   # Create LoVRR environment
+#   conda create -n lovrr_env python=3.11
+#   conda activate lovrr_env
+#   pip install torch==2.4.0 torchvision==0.19.0
+#   pip install accelerate peft transformers==4.45.2
+#   pip install gradio nncore decord
+#   # ... (install LoVRR section packages)
+#
+#   # Create DeepThinker environment
+#   conda create -n deepthinker_env python=3.11
+#   conda activate deepthinker_env
+#   pip install vllm==0.7.2
+#   pip install fastapi uvicorn qwen_vl_utils
+#   # ... (install DeepThinker section packages)
+#
+# ============================================================
