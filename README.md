@@ -7,7 +7,7 @@
   <a href="https://www.python.org/"><img src="https://img.shields.io/badge/Python-3.11+-blue?logo=python" alt="Python"></a>
 </p>
 
-[**Project Page**](https://jasperh901.github.io/LoVRR/) | [**Model Weights**](#model-weights)
+[**Project Page**](https://jasperh901.github.io/LoVRR/)
 
 </div>
 
