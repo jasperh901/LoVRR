@@ -54,15 +54,7 @@ torchvision==0.19.0
 # These packages are required for the DeepThinker reasoning model
 # (Reinforcement Learning enhanced video QA model)
 
-# FastAPI for HTTP service
-fastapi>=0.100.0
-uvicorn>=0.23.0
-
-# vLLM for efficient inference
-vllm==0.7.2
-
-# Qwen VL utilities
-qwen_vl_utils
+-r requirements-deepthinker.txt
 
 # Additional ML packages
 wandb==0.18.3
@@ -84,7 +76,7 @@ filelock>=3.12.0
 # INSTALLATION INSTRUCTIONS
 # ============================================================
 #
-# Option 1: Single environment (not recommended due to conflicts)
+# Option 1: Single environment
 #   pip install -r requirements.txt
 #
 # Option 2: Separate environments (recommended)
@@ -100,8 +92,6 @@ filelock>=3.12.0
 #   # Create DeepThinker environment
 #   conda create -n deepthinker_env python=3.11
 #   conda activate deepthinker_env
-#   pip install vllm==0.7.2
-#   pip install fastapi uvicorn qwen_vl_utils
-#   # ... (install DeepThinker section packages)
+#   pip install -r requirements-deepthinker.txt
 #
 # ============================================================

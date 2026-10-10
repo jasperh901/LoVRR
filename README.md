@@ -94,8 +94,7 @@ pip install -e .
 
 conda create -n deepthinker_env python=3.11 -y
 conda activate deepthinker_env
-pip install vllm==0.7.2
-pip install fastapi uvicorn qwen_vl_utils
+pip install -r requirements-deepthinker.txt
 ```
 
 

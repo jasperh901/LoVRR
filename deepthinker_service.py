@@ -72,6 +72,7 @@ class DeepThinkerService:
         self.top_p = config.get("top_p", 0.001)
         
         self.llm = None
+        self.model = None
         self.processor = None
         self.tokenizer = None
         
@@ -96,6 +97,8 @@ class DeepThinkerService:
         """Initialize the model and processor"""
         logger.info(f"Initializing DeepThinker model from: {self.model_path}")
         logger.info(f"Using vLLM: {self.use_vllm}")
+
+        self._init_processor()
         
         if self.use_vllm:
             self._init_vllm()
@@ -103,11 +106,25 @@ class DeepThinkerService:
             self._init_transformers()
             
         logger.info("DeepThinker model initialized successfully")
+
+    def _init_processor(self):
+        from transformers import Qwen2VLConfig, Qwen2VLProcessor
+
+        model_config, _ = Qwen2VLConfig.get_config_dict(self.model_path)
+        if model_config.get("model_type") != Qwen2VLConfig.model_type:
+            raise ValueError("model_path must point to a Qwen2-VL checkpoint")
+
+        self.processor = Qwen2VLProcessor.from_pretrained(
+            self.model_path,
+            do_resize=False,
+            trust_remote_code=False,
+        )
+        self.tokenizer = self.processor.tokenizer
+        self.tokenizer.padding_side = "left"
         
     def _init_vllm(self):
         """Initialize using vLLM for faster inference"""
         from vllm import LLM, SamplingParams
-        from transformers import AutoProcessor, AutoTokenizer
         
         self.llm = LLM(
             model=self.model_path,
@@ -116,7 +133,7 @@ class DeepThinkerService:
             gpu_memory_utilization=self.gpu_memory_utilization,
             enforce_eager=self.enforce_eager,
             limit_mm_per_prompt={"video": 1, "image": 1},
-            trust_remote_code=True,
+            trust_remote_code=False,
         )
         
         self.sampling_params = SamplingParams(
@@ -125,25 +142,16 @@ class DeepThinkerService:
             max_tokens=1024,
         )
         
-        self.processor = AutoProcessor.from_pretrained(self.model_path, trust_remote_code=True)
-        self.tokenizer = AutoTokenizer.from_pretrained(self.model_path, trust_remote_code=True)
-        self.tokenizer.padding_side = "left"
-        self.processor.tokenizer = self.tokenizer
-        
     def _init_transformers(self):
         """Initialize using transformers for flexible inference"""
-        from transformers import AutoProcessor, AutoTokenizer, Qwen2VLForConditionalGeneration
-        
-        self.processor = AutoProcessor.from_pretrained(self.model_path, trust_remote_code=True)
-        self.tokenizer = AutoTokenizer.from_pretrained(self.model_path, trust_remote_code=True)
-        self.tokenizer.padding_side = "left"
-        self.processor.tokenizer = self.tokenizer
+        from transformers import Qwen2VLForConditionalGeneration
         
         self.model = Qwen2VLForConditionalGeneration.from_pretrained(
             self.model_path,
             torch_dtype=torch.bfloat16,
             device_map="auto",
-            trust_remote_code=True,
+            attn_implementation="sdpa",
+            trust_remote_code=False,
         )
         self.model.eval()
         
@@ -237,26 +245,17 @@ class DeepThinkerService:
         prompt = self.processor.apply_chat_template(messages, tokenize=False, add_generation_prompt=True)
         
         # Process video input
-        image_inputs, video_inputs, video_kwargs = process_vision_info(messages, return_video_kwargs=True)
-        
-        # Prepare vllm input - only use supported kwargs
-        # vLLM doesn't support all kwargs from qwen_vl_utils, filter them
-        SUPPORTED_MM_KWARGS = {"fps", "min_pixels", "max_pixels", "nframes", "video_start", "video_end"}
-        mm_kwargs = {}
-        if video_kwargs:
-            for key, val in video_kwargs.items():
-                if key not in SUPPORTED_MM_KWARGS:
-                    continue
-                # Handle both list and non-list values
-                if isinstance(val, (list, tuple)) and len(val) > 0:
-                    mm_kwargs[key] = val[0]
-                else:
-                    mm_kwargs[key] = val
+        image_inputs, video_inputs = process_vision_info(messages)
+
+        multi_modal_data = {}
+        if image_inputs:
+            multi_modal_data["image"] = image_inputs
+        if video_inputs:
+            multi_modal_data["video"] = video_inputs
         
         llm_inputs = [{
             "prompt": prompt,
-            "multi_modal_data": {"video": video_inputs[0]} if video_inputs else {},
-            "mm_processor_kwargs": mm_kwargs,
+            "multi_modal_data": multi_modal_data,
         }]
         
         # Update sampling params with max_new_tokens
@@ -326,7 +325,10 @@ async def startup_event():
 @app.get("/health")
 async def health_check():
     """Health check endpoint"""
-    return {"status": "healthy", "model_loaded": service is not None and service.llm is not None}
+    return {
+        "status": "healthy",
+        "model_loaded": service is not None and (service.llm is not None or service.model is not None),
+    }
 
 
 @app.post("/infer", response_model=InferenceResponse)

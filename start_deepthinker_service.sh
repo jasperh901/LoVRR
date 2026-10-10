@@ -63,13 +63,41 @@ python -c "import torch; print(f'PyTorch: {torch.__version__}')" || {
     echo "Error: PyTorch not installed"
     exit 1
 }
-python -c "import vllm; print(f'vLLM: {vllm.__version__}')" || {
-    echo "Error: vLLM not installed"
+python - "$CONFIG_FILE" <<'PY' || {
+import sys
+from importlib.metadata import version
+from pathlib import Path
+
+import yaml
+from transformers import Qwen2VLForConditionalGeneration, Qwen2VLProcessor
+from qwen_vl_utils import process_vision_info
+
+config_path = Path(sys.argv[1])
+config = yaml.safe_load(config_path.read_text()) if config_path.is_file() else {}
+config = config.get("deepthinker_service", config)
+expected = {
+    "torch": "2.4.0",
+    "torchvision": "0.19.0",
+    "transformers": "4.45.2",
+    "qwen-vl-utils": "0.0.4",
+}
+if config.get("use_vllm", True):
+    import vllm
+    expected["vllm"] = "0.6.3.post1"
+for package, required in expected.items():
+    installed = version(package)
+    if installed.split("+", 1)[0] != required:
+        raise RuntimeError(f"{package}=={required} is required; found {installed}")
+    print(f"{package}: {installed}")
+PY
+    echo "Error: Could not load required dependencies."
+    echo "Run: pip install -r requirements-deepthinker.txt"
     exit 1
 }
 python -c "import fastapi; print(f'FastAPI: {fastapi.__version__}')" || {
-    echo "Installing FastAPI..."
-    pip install fastapi uvicorn
+    echo "Error: FastAPI not installed"
+    echo "Run: pip install -r requirements-deepthinker.txt"
+    exit 1
 }
 
 echo ""
