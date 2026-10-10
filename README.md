@@ -49,103 +49,94 @@ The framework consists of four specialized roles built on a unified Qwen2-VL bac
 
 ```
 LoVRR/
-├── lovrr/                          # Core framework
-│   ├── model/                      # Model architecture (AgentQwen2VL + LoRA)
+├── lovrr/
+│   ├── model/                      # AgentQwen2VL backbone and LoRA adapters
+│   ├── inference/                  # Planner, Grounder, Refiner, DeepThinker
+│   │   ├── roles.py                # Shared model and role switching
+│   │   ├── pipeline.py             # Localize, verify, refine, reason
+│   │   ├── deepthinker.py           # Reasoning and answer generation
+│   │   ├── temporal.py             # Temporal localization and scoring
+│   │   └── refinement.py           # VG-MSR refinement
 │   ├── dataset/                    # Dataset loaders and collators
-│   ├── train/                      # Training scripts (SFT + custom trainer)
-│   ├── utils/                      # Utility functions
-│   └── constants.py                # Role prompts and special tokens
-├── deepthinker_service.py          # DeepThinker vLLM-based FastAPI service
-├── deepthinker_client.py           # DeepThinker HTTP client library
-├── eval/                           # Evaluation scripts
-│   ├── infer_cgbench_enhanced.py   # CG-Bench evaluation
-│   ├── infer_mvbench_enhanced.py   # MVBench evaluation
-│   ├── infer_timelens_enhanced.py  # TimeLens evaluation
-│   └── deepthinker_answer_worker.py
-├── config.yaml                     # Unified configuration
-├── requirements.txt                # Python dependencies
-├── start_all.sh                    # One-command launch (tmux)
-├── start_lovrr.sh                  # Launch LoVRR service
-└── start_deepthinker_service.sh    # Launch DeepThinker service
+│   ├── train/                      # Training scripts
+│   ├── utils/
+│   ├── serve.py                    # HTTP API
+│   ├── infer.py                    # Command-line inference
+│   └── constants.py
+├── eval/                           # Benchmark evaluation
+├── config.yaml                     # Model, adapters, inference, server
+├── requirements.txt                # Dependencies for all roles
+├── start_all.sh
+└── start_lovrr.sh
 ```
 
 ## Installation
 
 ### Prerequisites
 
-- Python 3.11+
+- Python 3.11
 - CUDA 12.0+
-- 2× GPUs with ≥48 GB VRAM
+- A GPU with sufficient memory for the Qwen2-VL backbone and video inputs
 
 ### Environment Setup
 
-We recommend using **two separate conda environments** to avoid dependency conflicts 
+All four roles run in `lovrr_env` and use the same dependencies.
+
 ```bash
-# Clone the repository
 git clone https://github.com/jasperh901/LoVRR.git
 cd LoVRR
-
-# --- Environment : LoVRR ---
 conda create -n lovrr_env python=3.11 -y
 conda activate lovrr_env
-pip install torch==2.4.0 torchvision==0.19.0
 pip install -r requirements.txt
 pip install -e .
-
-conda create -n deepthinker_env python=3.11 -y
-conda activate deepthinker_env
-pip install -r requirements-deepthinker.txt
 ```
-
-
 
 ## Quick Start
 
-### Option 1: One-Command Launch
+Set the checkpoint and adapter paths in `config.yaml`. The model directory contains the Qwen2-VL processor, LoVRR configuration and localization weights, with role adapters in `planner/`, `grounder/`, `refiner/`, and `deepthinker/`.
 
-```bash
-./start_all.sh
+```yaml
+model:
+  model_path: "/path/to/LoVRR-7B"
+  base_model_path: "/path/to/Qwen2-VL-7B-Instruct"
+  device: "auto"
+  adapters:
+    planner: "/path/to/LoVRR-7B/planner"
+    grounder: "/path/to/LoVRR-7B/grounder"
+    refiner: "/path/to/LoVRR-7B/refiner"
+    deepthinker: "/path/to/LoVRR-7B/deepthinker"
+
+server:
+  host: "127.0.0.1"
+  port: 8000
 ```
 
-This starts both services using `tmux`. To attach: `tmux attach -t lovrr-r1`.
+Planner, Grounder, Refiner, and DeepThinker switch adapters on one loaded Qwen2-VL model and share its processor and video preprocessing. The pipeline localizes relevant clips, verifies and refines their boundaries, then generates reasoning and an answer.
 
-### Option 2: Manual Launch
-
-**Terminal 1 — DeepThinker Service:**
-
-```bash
-conda activate deepthinker_env
-CUDA_VISIBLE_DEVICES=0 python deepthinker_service.py --config config.yaml
-```
-
-**Terminal 2 — LoVRR Demo:**
+### Command-Line Inference
 
 ```bash
 conda activate lovrr_env
-CUDA_VISIBLE_DEVICES=1 python -m lovrr.demo.app_with_deepthinker
+python -m lovrr.infer --config config.yaml \
+    --video /path/to/video.mp4 \
+    --question "What happens after the person enters the room?"
 ```
 
-### Configuration
+### Service
 
-Edit `config.yaml` to set model paths and service parameters:
-
-```yaml
-deepthinker_service:
-  model_path: "/path/to/DeepThinker-7B"
-  use_vllm: true
-  tensor_parallel_size: 1
-  gpu_memory_utilization: 0.90
-  max_model_len: 32768
-  host: "127.0.0.1"
-  port: 8002
-
-lovrr:
-  model_path: "/path/to/LoVRR-7B"
-  base_model_path: "/path/to/Qwen2-VL-7B-Instruct"
-  use_deepthinker_answerer: true
-  host: "0.0.0.0"
-  port: 7860
+```bash
+./start_all.sh --config config.yaml
 ```
+
+The same service can be started with `./start_lovrr.sh` or `python -m lovrr.serve --config config.yaml`.
+
+```bash
+curl http://127.0.0.1:8000/answer \
+    -H 'Content-Type: application/json' \
+    -d '{"video_path":"/path/to/video.mp4","question":"What happens after the person enters the room?"}'
+```
+
+Responses include the evidence span, reasoning, and final answer. `/health` reports model readiness, and `/infer` accepts the same requests as `/answer`.
 
 ## Training
 
@@ -179,25 +170,27 @@ Please refer to the training scripts in `lovrr/train/` for detailed configuratio
 
 ## Evaluation
 
+Run benchmarks from the repository root in `lovrr_env`. Each worker shares one model across its roles.
+
 ### CG-Bench (Long Video, Grounded VideoQA)
 
 ```bash
 conda activate lovrr_env
-cd eval
-python infer_cgbench_enhanced.py \
-    --worker_id 0 \
-    --num_workers 3 \
-    --gpu 0
-python aggregate_cgbench_results.py --input_dir outputs/cgbench
+python -m eval.infer_cgbench_enhanced \
+    --model_path /path/to/LoVRR-7B \
+    --worker_id 0 --num_workers 1 --gpu 0 \
+    --output_dir outputs/cgbench
+python -m eval.aggregate_cgbench_results --output_dir outputs/cgbench
 ```
 
 ### MVBench (General Video QA)
 
 ```bash
-cd eval
-python infer_mvbench_enhanced.py \
-    --data_path /path/to/mvbench \
-    --output_dir outputs/mvbench
+python -m eval.infer_mvbench_enhanced \
+    --model_path /path/to/LoVRR-7B \
+    --base_model_path /path/to/Qwen2-VL-7B-Instruct \
+    --pred_path outputs/mvbench \
+    --use_planner --use_refinement --use_deepthinker
 ```
 
 ### Other Benchmarks
@@ -312,5 +305,4 @@ This project is built upon several excellent open-source works. We sincerely tha
 - **[Video-R1](https://github.com/tulerfeng/Video-R1)**
 - **[Qwen2-VL](https://github.com/QwenLM/Qwen2-VL)**
 - **[PEFT](https://github.com/huggingface/peft)**
-- **[vLLM](https://github.com/vllm-project/vllm)**
 - **[DeepSpeed](https://github.com/microsoft/DeepSpeed)**

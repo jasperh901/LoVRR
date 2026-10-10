@@ -3,7 +3,6 @@
 import argparse
 import copy
 import json
-from contextlib import nullcontext
 
 import nncore
 import torch
@@ -12,6 +11,7 @@ from lovrr.constants import GROUNDER_PROMPT, PLANNER_PROMPT, REFINER_PROMPT
 from lovrr.dataset.hybrid import DATASETS
 from lovrr.dataset.utils import process_vision_info
 from lovrr.model.builder import build_model
+from lovrr.inference import DeepThinker, RoleModel
 from lovrr.utils.io import get_duration, load_subtitle
 from lovrr.utils.parser import parse_query, parse_span
 
@@ -23,7 +23,7 @@ def parse_args():
     parser.add_argument('--model_gnd_path')
     parser.add_argument('--model_ver_path')
     parser.add_argument('--model_pla_path')
-    parser.add_argument('--model_ans_path')
+    parser.add_argument('--model_deepthinker_path', '--model_ans_path', dest='model_deepthinker_path')
     parser.add_argument('--split', default='test', choices=['train', 'valid', 'test'])
     parser.add_argument('--style', default='mcq', choices=['mcq', 'options', 'direct'])
     parser.add_argument('--use_subtitle', action='store_true')
@@ -50,7 +50,7 @@ if __name__ == '__main__':
     # NOTE:
     # 1. grounder is always true so no need to store
     # 2. answerer would always be used (when set to false, the base model would be used as the answerer)
-    adapter_state = dict(planner=False, refiner=False, answerer=False)
+    adapter_state = dict(planner=False, refiner=False, deepthinker=False)
 
     print('Initializing role *grounder*')
     model, processor = build_model(args.model_gnd_path, device=args.device)
@@ -70,12 +70,12 @@ if __name__ == '__main__':
             model.load_adapter(adapter_path, adapter_name='refiner')
             adapter_state['refiner'] = True
 
-    if args.model_ans_path is not None:
-        adapter_path = nncore.join(args.model_ans_path, 'answerer')
-        if nncore.is_dir(adapter_path):
-            print('Initializing role *answerer*')
-            model.load_adapter(adapter_path, adapter_name='answerer')
-            adapter_state['answerer'] = True
+    deepthinker = None
+    if args.model_deepthinker_path is not None:
+        roles = RoleModel(model, processor)
+        roles.load_role(args.model_deepthinker_path, 'deepthinker')
+        deepthinker = DeepThinker(roles)
+        adapter_state['deepthinker'] = True
 
     dataset_cls = DATASETS.get(args.dataset)
 
@@ -384,56 +384,61 @@ if __name__ == '__main__':
                 subs = ''.join(subs[:100])
                 prompt = f'You are given a video with {round(e - s, 1)} seconds long.\nSubtitles:\n{subs}' + prompt
 
-            messages = [{
-                'role':
-                'user',
-                'content': [{
-                    'type': 'video',
-                    'video': video_path,
-                    'num_threads': args.num_threads,
-                    'video_start': s,
-                    'video_end': e,
-                    'min_pixels': getattr(dataset_cls, 'MIN_PIXELS', 128) * 28 * 28,
-                    'max_pixels': getattr(dataset_cls, 'MAX_PIXELS', 256) * 28 * 28,
-                    'max_frames': getattr(dataset_cls, 'MAX_FRAMES', 32),
-                    'fps': getattr(dataset_cls, 'FPS', 2.0)
-                }, {
-                    'type': 'text',
-                    'text': prompt
-                }]
-            }]
-
-            text = processor.apply_chat_template(messages, add_generation_prompt=True)
-            text += 'Best Option: (' if args.style == 'mcq' else ''
-            print(text)
-            images, videos = process_vision_info(messages)
-            data = processor(text=[text], images=images, videos=videos, return_tensors='pt')
-            data = data.to(device)
-
-            if adapter_state['answerer']:
-                model.base_model.disable_adapter_layers()
-                model.base_model.enable_adapter_layers()
-                model.set_adapter('answerer')
-                context = nullcontext
+            if adapter_state['deepthinker']:
+                result = deepthinker.answer(
+                    video_path, prompt, start_time=s, end_time=e,
+                    problem_type='multiple choice' if args.style in ('mcq', 'options') else 'free-form',
+                    max_frames=getattr(dataset_cls, 'MAX_FRAMES', 32),
+                    max_new_tokens=1024,
+                )
+                if not result.success:
+                    raise RuntimeError(result.error)
+                response = result.answer
+                dump['deepthinker_thinking'] = result.thinking
+                dump['deepthinker_answer'] = response
             else:
-                context = model.disable_adapter
+                messages = [{
+                    'role':
+                    'user',
+                    'content': [{
+                        'type': 'video',
+                        'video': video_path,
+                        'num_threads': args.num_threads,
+                        'video_start': s,
+                        'video_end': e,
+                        'min_pixels': getattr(dataset_cls, 'MIN_PIXELS', 128) * 28 * 28,
+                        'max_pixels': getattr(dataset_cls, 'MAX_PIXELS', 256) * 28 * 28,
+                        'max_frames': getattr(dataset_cls, 'MAX_FRAMES', 32),
+                        'fps': getattr(dataset_cls, 'FPS', 2.0)
+                    }, {
+                        'type': 'text',
+                        'text': prompt
+                    }]
+                }]
 
-            with context():
-                output_ids = model.generate(
-                    **data,
-                    do_sample=False,
-                    temperature=None,
-                    top_p=None,
-                    top_k=None,
-                    repetition_penalty=None,
-                    max_new_tokens=256)
+                text = processor.apply_chat_template(messages, add_generation_prompt=True)
+                text += 'Best Option: (' if args.style == 'mcq' else ''
+                print(text)
+                images, videos = process_vision_info(messages)
+                data = processor(text=[text], images=images, videos=videos, return_tensors='pt')
+                data = data.to(device)
 
-            assert data.input_ids.size(0) == output_ids.size(0) == 1
-            output_ids = output_ids[0, data.input_ids.size(1):]
-            if output_ids[-1] == processor.tokenizer.eos_token_id:
-                output_ids = output_ids[:-1]
-            response = processor.decode(output_ids, clean_up_tokenization_spaces=False)
-            print(response)
+                with model.disable_adapter():
+                    output_ids = model.generate(
+                        **data,
+                        do_sample=False,
+                        temperature=None,
+                        top_p=None,
+                        top_k=None,
+                        repetition_penalty=None,
+                        max_new_tokens=256)
+
+                assert data.input_ids.size(0) == output_ids.size(0) == 1
+                output_ids = output_ids[0, data.input_ids.size(1):]
+                if output_ids[-1] == processor.tokenizer.eos_token_id:
+                    output_ids = output_ids[:-1]
+                response = processor.decode(output_ids, clean_up_tokenization_spaces=False)
+                print(response)
 
             dump['answerer_response'] = response
             dump['response'] = response

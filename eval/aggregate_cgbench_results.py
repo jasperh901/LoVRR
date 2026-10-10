@@ -12,25 +12,11 @@ from collections import defaultdict
 def load_lovrr_results(output_dir):
     """Load results from all LoVRR workers."""
     results = []
-    for i in range(3):
-        result_file = os.path.join(output_dir, f'results_worker_{i}.json')
-        if os.path.exists(result_file):
-            with open(result_file) as f:
-                results.extend(json.load(f))
+    from pathlib import Path
+    for result_file in sorted(Path(output_dir).glob('results_worker_*.json')):
+        with result_file.open() as f:
+            results.extend(json.load(f))
     return {r['qid']: r for r in results}
-
-
-def load_deepthinker_results(output_dir):
-    """Load results from DeepThinker done directory."""
-    done_dir = os.path.join(output_dir, 'deepthinker_done')
-    results = {}
-    if os.path.exists(done_dir):
-        for f in os.listdir(done_dir):
-            if f.endswith('.json'):
-                with open(os.path.join(done_dir, f)) as fp:
-                    data = json.load(fp)
-                    results[data['qid']] = data
-    return results
 
 
 def extract_answer_letter(response):
@@ -39,6 +25,9 @@ def extract_answer_letter(response):
     if not response:
         return None
     response = response.strip()
+    match = re.fullmatch(r'\(?([A-H])\)?[.)]?', response, re.IGNORECASE)
+    if match:
+        return match.group(1).upper()
     
     # For LoVRR format: "A) xxx" or "(A) xxx" at start
     match = re.match(r'^\(?([A-H])\)?[\s\)]', response)
@@ -162,7 +151,7 @@ def main():
     
     # Load results
     vm_results = load_lovrr_results(args.output_dir)
-    r1_results = load_deepthinker_results(args.output_dir)
+    r1_results = {qid: result for qid, result in vm_results.items() if result.get('deepthinker_answer')}
     
     print(f"LoVRR results: {len(vm_results)}")
     print(f"DeepThinker results: {len(r1_results)}")

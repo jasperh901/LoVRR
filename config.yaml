@@ -1,63 +1,30 @@
-# LoVRR + DeepThinker Configuration
-# ==========================================
-# Multi-GPU server configuration (using GPU 0 and GPU 1)
-
-# DeepThinker Service Configuration
-deepthinker_service:
-  # Path to DeepThinker model
-  model_path: "models/DeepThinker-7B"
-  
-  # Use vLLM for faster inference (recommended)
-  use_vllm: true
-  
-  # vLLM settings (48GB GPU configuration)
-  tensor_parallel_size: 1  # Single GPU for DeepThinker
-  gpu_memory_utilization: 0.90  # Conservative memory setting
-  max_model_len: 32768  # Long context support
-  enforce_eager: false  # Enable CUDA Graph acceleration
-  
-  # Generation parameters
-  temperature: 0.1
-  top_p: 0.001
-  
-  # Server settings
-  host: "127.0.0.1"
-  port: 8002
-
-
-# DeepThinker Client Configuration (used by LoVRR)
-deepthinker_client:
-  # Service URL
-  service_url: "http://127.0.0.1:8002"
-  
-  # Request timeout in seconds (video inference can be slow)
-  timeout: 300.0
-  
-  # Retry settings
-  max_retries: 3
-  retry_delay: 1.0
-
-
-# LoVRR Configuration
-lovrr:
-  # Path to LoVRR model
+model:
   model_path: "models/LoVRR-7B"
   base_model_path: "models/Qwen2-VL-7B-Instruct"
-  
-  # Whether to use DeepThinker for answering (true = use DeepThinker, false = use original Qwen2-VL)
-  use_deepthinker_answerer: true
-  
-  # DeepThinker inference settings for answerer
-  deepthinker_max_frames: 64  # More frames for better temporal understanding
-  deepthinker_max_new_tokens: 2048  # Longer output for detailed reasoning
-  deepthinker_problem_type: "free-form"
-  
-  # Gradio server settings
-  host: "0.0.0.0"
-  port: 7860
+  device: "auto"
+  adapters:
+    planner: "models/LoVRR-7B/planner"
+    grounder: "models/LoVRR-7B/grounder"
+    refiner: "models/LoVRR-7B/refiner"
+    deepthinker: "models/LoVRR-7B/deepthinker"
 
+inference:
+  max_frames: 32
+  max_new_tokens: 2048
+  problem_type: "free-form"
+  temperature: 0.1
+  top_p: 0.001
 
-# Logging Configuration
-logging:
-  level: "INFO"
-  format: "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+refinement:
+  refine_iters: 3
+  budget: 32
+  step_ratio: 0.2
+  step_min: 1.0
+  step_decay: 0.7
+  skip_high: 0.85
+  skip_low: 0.15
+  gain: 0.01
+
+server:
+  host: "127.0.0.1"
+  port: 8000

@@ -11,20 +11,15 @@ import json
 import os
 import sys
 import logging
-from datetime import datetime
 from pathlib import Path
 
 import torch
 
 # Add paths
 SCRIPT_DIR = Path(__file__).parent.absolute()
-BRIDGE_PATH = SCRIPT_DIR.parent
-LOVRR_DIR = BRIDGE_PATH / "LoVRR-main"
-sys.path.insert(0, str(BRIDGE_PATH))
-sys.path.insert(0, str(LOVRR_DIR))
+PROJECT_ROOT = SCRIPT_DIR.parent
+sys.path.insert(0, str(PROJECT_ROOT))
 
-import nncore
-from torch.utils.data import Dataset, DataLoader
 
 from lovrr.constants import GROUNDER_PROMPT
 from lovrr.dataset.utils import process_vision_info
@@ -32,7 +27,7 @@ from lovrr.model.builder import build_model
 from lovrr.utils.parser import parse_span
 
 # Import refine functions from infer_mvbench_enhanced
-from eval.infer_mvbench_enhanced import (
+from lovrr.inference.refinement import (
     _refiner_score,
     refine_span_with_multiscale,
 )
@@ -202,8 +197,8 @@ def main():
         checkpoint_path = Path(args.output_path) / f"checkpoint_{args.index}.json"
         pred_path = Path(args.output_path) / f"predictions_{args.index}.jsonl"
     else:
-        checkpoint_path = Path(args.output_path) / f"checkpoint.json"
-        pred_path = Path(args.output_path) / f"predictions.jsonl"
+        checkpoint_path = Path(args.output_path) / "checkpoint.json"
+        pred_path = Path(args.output_path) / "predictions.jsonl"
     
     processed_ids = set()
     dumps = []

@@ -84,7 +84,7 @@ def train(TrainingArguments, Trainer):
     parser = HfArgumentParser((ModelArguments, DataArguments, TrainingArguments))
     model_args, data_args, training_args = parser.parse_args_into_dataclasses()
 
-    assert model_args.role in ('all_in_one', 'planner', 'grounder', 'refiner', 'answerer')
+    assert model_args.role in ('all_in_one', 'planner', 'grounder', 'refiner', 'deepthinker', 'answerer')
 
     config_cls, model_cls = MODELS[model_args.base_model]
 

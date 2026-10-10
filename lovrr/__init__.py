@@ -8,12 +8,12 @@ Components:
 - Planner: Analyzes questions and creates execution plans
 - Grounder: Locates relevant video segments
 - Refiner: Scores and refines temporal boundaries
-- Answerer: Generates final answers
+- DeepThinker: Reasons over video evidence and generates final answers
 
 Architecture:
 - Single base model (Qwen2-VL) with dynamically switched LoRA adapters
 - Multi-scale refinement for precise temporal grounding
-- Integration with DeepThinker for enhanced reasoning
+- Planner, Grounder, Refiner, and DeepThinker share the model and processor
 """
 
 __version__ = "1.0.0"
